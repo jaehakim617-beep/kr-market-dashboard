@@ -1,3 +1,16 @@
+const NUMERIC_FILTERS = [
+  { key: "price", label: "현재가", unit: "원" },
+  { key: "changeRate", label: "등락률", unit: "%" },
+  { key: "tradingValue", label: "거래대금", unit: "백만원" },
+  { key: "sales", label: "매출액", unit: "억원" },
+  { key: "operatingProfit", label: "영업이익", unit: "억원" },
+  { key: "salesGrowth", label: "매출액 증가율", unit: "%" },
+  { key: "operatingProfitGrowth", label: "영업이익 증가율", unit: "%" },
+  { key: "foreignRatio", label: "외국인", unit: "%" },
+  { key: "per", label: "PER", unit: "배" },
+  { key: "marketCap", label: "시총", unit: "억원" },
+];
+
 const state = {
   rows: [],
   filtered: [],
@@ -10,7 +23,6 @@ const els = {
   summary: document.querySelector("#summary-grid"),
   market: document.querySelector("#market-filter"),
   search: document.querySelector("#search-input"),
-  sort: document.querySelector("#sort-select"),
   table: document.querySelector("#stock-table"),
   selectedMarket: document.querySelector("#selected-market"),
   selectedTitle: document.querySelector("#selected-title"),
@@ -19,11 +31,15 @@ const els = {
   chart: document.querySelector("#price-chart"),
   chartState: document.querySelector("#chart-state"),
   theme: document.querySelector("#theme-toggle"),
+  numericFilters: document.querySelector("#numeric-filters"),
+  clearFilters: document.querySelector("#clear-filters"),
 };
 
 init();
 
 async function init() {
+  renderNumericFilters();
+
   try {
     const response = await fetch("./data/market_latest.json", { cache: "no-store" });
     if (!response.ok) throw new Error("data/market_latest.json 파일이 없습니다.");
@@ -35,47 +51,90 @@ async function init() {
     selectStock(state.filtered[0]);
   } catch (error) {
     els.meta.textContent = error.message;
-    els.table.innerHTML = `<tr><td class="empty" colspan="10">먼저 node scripts/update-data.mjs를 실행해 주세요.</td></tr>`;
+    els.table.innerHTML = `<tr><td class="empty" colspan="11">먼저 node scripts/update-data.mjs를 실행해 주세요.</td></tr>`;
   }
 }
 
 function bindEvents() {
   els.market.addEventListener("change", applyFilters);
   els.search.addEventListener("input", applyFilters);
-  els.sort.addEventListener("change", applyFilters);
   els.theme.addEventListener("click", () => document.body.classList.toggle("dark"));
+  els.numericFilters.querySelectorAll("input").forEach((input) => input.addEventListener("input", applyFilters));
+  els.clearFilters.addEventListener("click", () => {
+    els.numericFilters.querySelectorAll("input").forEach((input) => {
+      input.value = "";
+    });
+    applyFilters();
+  });
+}
+
+function renderNumericFilters() {
+  els.numericFilters.innerHTML = NUMERIC_FILTERS.map(
+    (filter) => `
+      <div class="filter-field">
+        <div class="filter-label">
+          <span>${filter.label}</span>
+          <small>${filter.unit}</small>
+        </div>
+        <div class="range-inputs">
+          <input data-filter="${filter.key}" data-bound="min" inputmode="decimal" placeholder="최소" />
+          <input data-filter="${filter.key}" data-bound="max" inputmode="decimal" placeholder="최대" />
+        </div>
+      </div>
+    `,
+  ).join("");
 }
 
 function applyFilters() {
   const market = els.market.value;
   const query = els.search.value.trim().toLowerCase();
-  const [sortKey, sortDir] = els.sort.value.split(":");
+  const ranges = readRanges();
 
   state.filtered = state.rows
     .filter((row) => market === "ALL" || row.market === market)
     .filter((row) => !query || row.name.toLowerCase().includes(query) || row.symbol.includes(query))
-    .sort((a, b) => compareNullable(a[sortKey], b[sortKey], sortDir));
+    .filter((row) => matchesRanges(row, ranges));
 
   renderSummary();
   renderTable();
   if (!state.filtered.includes(state.selected)) selectStock(state.filtered[0]);
 }
 
+function readRanges() {
+  const ranges = {};
+  els.numericFilters.querySelectorAll("input").forEach((input) => {
+    const key = input.dataset.filter;
+    const bound = input.dataset.bound;
+    const value = parseFilterNumber(input.value);
+    if (!ranges[key]) ranges[key] = {};
+    ranges[key][bound] = value;
+  });
+  return ranges;
+}
+
+function matchesRanges(row, ranges) {
+  return NUMERIC_FILTERS.every(({ key }) => {
+    const value = row[key];
+    const range = ranges[key] ?? {};
+    if (range.min == null && range.max == null) return true;
+    if (value == null) return false;
+    if (range.min != null && value < range.min) return false;
+    if (range.max != null && value > range.max) return false;
+    return true;
+  });
+}
+
 function renderSummary() {
   const rows = state.filtered;
   const kospi = rows.filter((row) => row.market === "KOSPI").length;
   const kosdaq = rows.filter((row) => row.market === "KOSDAQ").length;
-  const totalTradingValue = sum(rows, "tradingValue");
   const advancers = rows.filter((row) => row.changeRate > 0).length;
   const decliners = rows.filter((row) => row.changeRate < 0).length;
-  const top = rows[0];
 
   const cards = [
     ["표시 종목", `${rows.length.toLocaleString()}개`],
     ["코스피 / 코스닥", `${kospi.toLocaleString()} / ${kosdaq.toLocaleString()}`],
-    ["거래대금", `${formatNumber(totalTradingValue)} 백만원`],
     ["상승 / 하락", `${advancers.toLocaleString()} / ${decliners.toLocaleString()}`],
-    ["정렬 1위", top ? `${top.name} ${formatPercent(top.changeRate)}` : "-"],
   ];
 
   els.summary.innerHTML = cards
@@ -96,7 +155,8 @@ function renderTable() {
         <td>${formatNumber(row.tradingValue)}</td>
         <td>${formatNumber(row.sales)}</td>
         <td>${formatNumber(row.operatingProfit)}</td>
-        <td>${formatPercent(row.salesGrowth)} / ${formatPercent(row.operatingProfitGrowth)}</td>
+        <td>${formatPercent(row.salesGrowth)}</td>
+        <td>${formatPercent(row.operatingProfitGrowth)}</td>
         <td>${formatPercent(row.foreignRatio)}</td>
         <td>${formatRatio(row.per)}</td>
         <td>${formatNumber(row.marketCap)}</td>
@@ -104,7 +164,7 @@ function renderTable() {
     })
     .join("");
 
-  els.table.innerHTML = html || `<tr><td class="empty" colspan="10">조건에 맞는 종목이 없습니다.</td></tr>`;
+  els.table.innerHTML = html || `<tr><td class="empty" colspan="11">조건에 맞는 종목이 없습니다.</td></tr>`;
   els.table.querySelectorAll("tr[data-symbol]").forEach((tr) => {
     tr.addEventListener("click", () => selectStock(state.rows.find((row) => row.symbol === tr.dataset.symbol)));
   });
@@ -132,6 +192,8 @@ async function selectStock(row) {
     ["거래대금", `${formatNumber(row.tradingValue)} 백만원`],
     ["매출액", `${formatNumber(row.sales)} 억원`],
     ["영업이익", `${formatNumber(row.operatingProfit)} 억원`],
+    ["매출액 증가율", formatPercent(row.salesGrowth)],
+    ["영업이익 증가율", formatPercent(row.operatingProfitGrowth)],
     ["외국인비율", formatPercent(row.foreignRatio)],
     ["PER", formatRatio(row.per)],
   ]
@@ -191,14 +253,11 @@ function drawEmptyChart(message) {
   els.chart.innerHTML = `<text x="360" y="150" text-anchor="middle" fill="currentColor" font-size="16">${escapeHtml(message)}</text>`;
 }
 
-function compareNullable(a, b, direction) {
-  const left = a ?? (direction === "asc" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
-  const right = b ?? (direction === "asc" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
-  return direction === "asc" ? left - right : right - left;
-}
-
-function sum(rows, key) {
-  return rows.reduce((total, row) => total + (Number(row[key]) || 0), 0);
+function parseFilterNumber(value) {
+  const cleaned = value.replace(/,/g, "").trim();
+  if (!cleaned) return null;
+  const number = Number(cleaned);
+  return Number.isFinite(number) ? number : null;
 }
 
 function trendClass(value) {
