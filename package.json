@@ -1,0 +1,12 @@
+{
+  "name": "kr-market-visualizer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "update": "node scripts/update-data.mjs",
+    "update:charts": "node scripts/update-data.mjs --charts --chart-days=260",
+    "build": "node scripts/build-static.mjs",
+    "serve": "node scripts/serve.mjs"
+  }
+}
