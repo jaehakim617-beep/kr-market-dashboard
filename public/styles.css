@@ -114,8 +114,7 @@ input {
 
 .summary-card,
 .detail,
-.table-wrap,
-.filter-panel {
+.table-wrap {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -137,45 +136,6 @@ input {
   font-size: 22px;
 }
 
-.filter-panel {
-  padding: 14px;
-  margin-bottom: 18px;
-}
-
-.filter-panel-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.filter-panel-head button {
-  width: auto;
-  min-height: 32px;
-  padding: 0 12px;
-}
-
-.numeric-filters {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(160px, 1fr));
-  gap: 12px;
-}
-
-.filter-field {
-  display: grid;
-  gap: 8px;
-  align-content: start;
-}
-
-.filter-label {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 12px;
-}
-
 .range-inputs {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -184,8 +144,7 @@ input {
 
 .range-inputs input,
 .percent-row input,
-.percent-row select,
-.filter-field > select {
+.percent-row select {
   min-height: 34px;
   padding: 0 8px;
 }
@@ -211,7 +170,7 @@ input {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 1250px;
+  min-width: 1420px;
 }
 
 th,
@@ -230,6 +189,57 @@ th {
   color: var(--muted);
   font-weight: 700;
   z-index: 2;
+}
+
+.filter-row th {
+  top: 39px;
+  padding: 7px;
+  background: color-mix(in srgb, var(--panel) 92%, var(--bg));
+}
+
+.sort-button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  min-height: 0;
+  padding: 0;
+  width: 100%;
+  font: inherit;
+  font-weight: 700;
+  text-align: right;
+}
+
+th:first-child .sort-button {
+  text-align: left;
+}
+
+.sort-button span {
+  display: inline-block;
+  min-width: 12px;
+  color: var(--accent);
+}
+
+.sort-button.active {
+  color: var(--ink);
+}
+
+.filter-row input,
+.filter-row select {
+  min-height: 28px;
+  padding: 0 6px;
+  font-size: 12px;
+}
+
+.filter-row button {
+  width: auto;
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.column-filter {
+  display: grid;
+  gap: 5px;
 }
 
 th:first-child,
@@ -370,7 +380,6 @@ svg {
 
   .controls,
   .summary-grid,
-  .numeric-filters,
   .metric-pairs {
     grid-template-columns: 1fr;
   }
