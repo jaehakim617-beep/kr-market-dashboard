@@ -15,6 +15,7 @@ const state = {
   rows: [],
   filtered: [],
   selected: null,
+  sort: null,
   chartCache: new Map(),
 };
 
@@ -31,14 +32,13 @@ const els = {
   chart: document.querySelector("#price-chart"),
   chartState: document.querySelector("#chart-state"),
   theme: document.querySelector("#theme-toggle"),
-  numericFilters: document.querySelector("#numeric-filters"),
   clearFilters: document.querySelector("#clear-filters"),
 };
 
 init();
 
 async function init() {
-  renderNumericFilters();
+  renderColumnFilters();
 
   try {
     const response = await fetch("./data/market_latest.json", { cache: "no-store" });
@@ -59,42 +59,37 @@ function bindEvents() {
   els.market.addEventListener("change", applyFilters);
   els.search.addEventListener("input", applyFilters);
   els.theme.addEventListener("click", () => document.body.classList.toggle("dark"));
-  els.numericFilters.querySelectorAll("input").forEach((input) => input.addEventListener("input", applyFilters));
-  els.numericFilters.querySelectorAll("select[data-percent-mode]").forEach((select) => select.addEventListener("change", applyFilters));
-  els.numericFilters.querySelectorAll("select[data-sort]").forEach((select) => {
-    select.addEventListener("change", () => {
-      if (select.value) {
-        els.numericFilters.querySelectorAll("select[data-sort]").forEach((other) => {
-          if (other !== select) other.value = "";
-        });
+  document.querySelectorAll(".filter-row input, .filter-row select").forEach((control) => control.addEventListener("input", applyFilters));
+  document.querySelectorAll(".filter-row select").forEach((control) => control.addEventListener("change", applyFilters));
+  document.querySelectorAll(".sort-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.sort;
+      if (state.sort?.key === key) {
+        state.sort.direction = state.sort.direction === "desc" ? "asc" : "desc";
+      } else {
+        state.sort = { key, direction: "desc" };
       }
+      updateSortIndicators();
       applyFilters();
     });
   });
   els.clearFilters.addEventListener("click", () => {
-    els.numericFilters.querySelectorAll("input").forEach((input) => { input.value = ""; });
-    els.numericFilters.querySelectorAll("select").forEach((select) => { select.value = ""; });
+    document.querySelectorAll(".filter-row input").forEach((input) => { input.value = ""; });
+    document.querySelectorAll(".filter-row select").forEach((select) => { select.value = ""; });
     applyFilters();
   });
 }
 
-function renderNumericFilters() {
-  els.numericFilters.innerHTML = NUMERIC_FILTERS.map(
-    (filter) => `
-      <div class="filter-field">
-        <div class="filter-label">
-          <span>${filter.label}</span>
-          <small>${filter.unit}</small>
-        </div>
+function renderColumnFilters() {
+  NUMERIC_FILTERS.forEach((filter) => {
+    const cell = document.querySelector(`[data-filter-cell="${filter.key}"]`);
+    if (!cell) return;
+    cell.innerHTML = `
+      <div class="column-filter">
         <div class="range-inputs">
           <input data-filter="${filter.key}" data-bound="min" inputmode="decimal" placeholder="최소" />
           <input data-filter="${filter.key}" data-bound="max" inputmode="decimal" placeholder="최대" />
         </div>
-        <select data-sort="${filter.key}" aria-label="${filter.label} 정렬">
-          <option value="">정렬 없음</option>
-          <option value="asc">오름차순</option>
-          <option value="desc">내림차순</option>
-        </select>
         <div class="percent-row">
           <select data-percent-mode="${filter.key}" aria-label="${filter.label} 상하위">
             <option value="">전체</option>
@@ -104,8 +99,8 @@ function renderNumericFilters() {
           <input data-percent-value="${filter.key}" inputmode="decimal" placeholder="%" />
         </div>
       </div>
-    `,
-  ).join("");
+    `;
+  });
 }
 
 function applyFilters() {
@@ -113,7 +108,6 @@ function applyFilters() {
   const query = els.search.value.trim().toLowerCase();
   const ranges = readRanges();
   const percentFilters = readPercentFilters();
-  const sort = readSort();
 
   state.filtered = state.rows
     .filter((row) => market === "ALL" || row.market === market)
@@ -121,7 +115,7 @@ function applyFilters() {
     .filter((row) => matchesRanges(row, ranges));
 
   state.filtered = applyPercentFilters(state.filtered, percentFilters);
-  state.filtered = applySort(state.filtered, sort);
+  state.filtered = applySort(state.filtered, state.sort);
 
   renderSummary();
   renderTable();
@@ -130,7 +124,7 @@ function applyFilters() {
 
 function readRanges() {
   const ranges = {};
-  els.numericFilters.querySelectorAll("input").forEach((input) => {
+  document.querySelectorAll("input[data-filter]").forEach((input) => {
     const key = input.dataset.filter;
     const bound = input.dataset.bound;
     const value = parseFilterNumber(input.value);
@@ -154,18 +148,10 @@ function matchesRanges(row, ranges) {
 
 function readPercentFilters() {
   return NUMERIC_FILTERS.map(({ key }) => {
-    const mode = els.numericFilters.querySelector(`select[data-percent-mode="${key}"]`)?.value ?? "";
-    const percent = parseFilterNumber(els.numericFilters.querySelector(`input[data-percent-value="${key}"]`)?.value ?? "");
+    const mode = document.querySelector(`select[data-percent-mode="${key}"]`)?.value ?? "";
+    const percent = parseFilterNumber(document.querySelector(`input[data-percent-value="${key}"]`)?.value ?? "");
     return { key, mode, percent };
   }).filter((filter) => filter.mode && filter.percent != null && filter.percent > 0);
-}
-
-function readSort() {
-  for (const { key } of NUMERIC_FILTERS) {
-    const direction = els.numericFilters.querySelector(`select[data-sort="${key}"]`)?.value ?? "";
-    if (direction) return { key, direction };
-  }
-  return null;
 }
 
 function applyPercentFilters(rows, filters) {
@@ -187,6 +173,15 @@ function applyPercentFilters(rows, filters) {
       return filter.mode === "top" ? value >= threshold : value <= threshold;
     });
   }, rows);
+}
+
+function updateSortIndicators() {
+  document.querySelectorAll(".sort-button").forEach((button) => {
+    const marker = button.querySelector("span");
+    const active = state.sort?.key === button.dataset.sort;
+    button.classList.toggle("active", active);
+    marker.textContent = active ? (state.sort.direction === "asc" ? "▲" : "▼") : "";
+  });
 }
 
 function applySort(rows, sort) {
