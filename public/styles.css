@@ -6,9 +6,6 @@ body.dark {
   --ink: #eef3f8;
   --muted: #9aa8b8;
   --line: #2a3441;
-  --up: #d72f3f;
-  --down: #2476d3;
-  --accent: #008675;
   --accent-soft: #102f2c;
   --shadow: none;
 }
@@ -167,7 +164,8 @@ input {
 
 .filter-field {
   display: grid;
-  gap: 7px;
+  gap: 8px;
+  align-content: start;
 }
 
 .filter-label {
@@ -184,9 +182,18 @@ input {
   gap: 6px;
 }
 
-.range-inputs input {
+.range-inputs input,
+.percent-row input,
+.percent-row select,
+.filter-field > select {
   min-height: 34px;
   padding: 0 8px;
+}
+
+.percent-row {
+  display: grid;
+  grid-template-columns: minmax(72px, 0.9fr) minmax(62px, 0.8fr);
+  gap: 6px;
 }
 
 .workspace {
