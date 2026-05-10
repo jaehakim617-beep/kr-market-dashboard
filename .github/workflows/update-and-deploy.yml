@@ -2,6 +2,8 @@ name: Update and Deploy Dashboard
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
   schedule:
     # 17:10 KST on weekdays. GitHub Actions cron uses UTC.
     - cron: "10 8 * * 1-5"
