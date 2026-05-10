@@ -60,10 +60,20 @@ function bindEvents() {
   els.search.addEventListener("input", applyFilters);
   els.theme.addEventListener("click", () => document.body.classList.toggle("dark"));
   els.numericFilters.querySelectorAll("input").forEach((input) => input.addEventListener("input", applyFilters));
-  els.clearFilters.addEventListener("click", () => {
-    els.numericFilters.querySelectorAll("input").forEach((input) => {
-      input.value = "";
+  els.numericFilters.querySelectorAll("select[data-percent-mode]").forEach((select) => select.addEventListener("change", applyFilters));
+  els.numericFilters.querySelectorAll("select[data-sort]").forEach((select) => {
+    select.addEventListener("change", () => {
+      if (select.value) {
+        els.numericFilters.querySelectorAll("select[data-sort]").forEach((other) => {
+          if (other !== select) other.value = "";
+        });
+      }
+      applyFilters();
     });
+  });
+  els.clearFilters.addEventListener("click", () => {
+    els.numericFilters.querySelectorAll("input").forEach((input) => { input.value = ""; });
+    els.numericFilters.querySelectorAll("select").forEach((select) => { select.value = ""; });
     applyFilters();
   });
 }
@@ -80,6 +90,19 @@ function renderNumericFilters() {
           <input data-filter="${filter.key}" data-bound="min" inputmode="decimal" placeholder="최소" />
           <input data-filter="${filter.key}" data-bound="max" inputmode="decimal" placeholder="최대" />
         </div>
+        <select data-sort="${filter.key}" aria-label="${filter.label} 정렬">
+          <option value="">정렬 없음</option>
+          <option value="asc">오름차순</option>
+          <option value="desc">내림차순</option>
+        </select>
+        <div class="percent-row">
+          <select data-percent-mode="${filter.key}" aria-label="${filter.label} 상하위">
+            <option value="">전체</option>
+            <option value="top">상위</option>
+            <option value="bottom">하위</option>
+          </select>
+          <input data-percent-value="${filter.key}" inputmode="decimal" placeholder="%" />
+        </div>
       </div>
     `,
   ).join("");
@@ -89,11 +112,16 @@ function applyFilters() {
   const market = els.market.value;
   const query = els.search.value.trim().toLowerCase();
   const ranges = readRanges();
+  const percentFilters = readPercentFilters();
+  const sort = readSort();
 
   state.filtered = state.rows
     .filter((row) => market === "ALL" || row.market === market)
     .filter((row) => !query || row.name.toLowerCase().includes(query) || row.symbol.includes(query))
     .filter((row) => matchesRanges(row, ranges));
+
+  state.filtered = applyPercentFilters(state.filtered, percentFilters);
+  state.filtered = applySort(state.filtered, sort);
 
   renderSummary();
   renderTable();
@@ -121,6 +149,55 @@ function matchesRanges(row, ranges) {
     if (range.min != null && value < range.min) return false;
     if (range.max != null && value > range.max) return false;
     return true;
+  });
+}
+
+function readPercentFilters() {
+  return NUMERIC_FILTERS.map(({ key }) => {
+    const mode = els.numericFilters.querySelector(`select[data-percent-mode="${key}"]`)?.value ?? "";
+    const percent = parseFilterNumber(els.numericFilters.querySelector(`input[data-percent-value="${key}"]`)?.value ?? "");
+    return { key, mode, percent };
+  }).filter((filter) => filter.mode && filter.percent != null && filter.percent > 0);
+}
+
+function readSort() {
+  for (const { key } of NUMERIC_FILTERS) {
+    const direction = els.numericFilters.querySelector(`select[data-sort="${key}"]`)?.value ?? "";
+    if (direction) return { key, direction };
+  }
+  return null;
+}
+
+function applyPercentFilters(rows, filters) {
+  return filters.reduce((currentRows, filter) => {
+    const values = currentRows
+      .map((row) => row[filter.key])
+      .filter((value) => value != null && Number.isFinite(value))
+      .sort((a, b) => a - b);
+
+    if (!values.length) return [];
+
+    const clampedPercent = Math.min(Math.max(filter.percent, 0), 100);
+    const count = Math.max(1, Math.ceil(values.length * (clampedPercent / 100)));
+    const threshold = filter.mode === "top" ? values[Math.max(values.length - count, 0)] : values[Math.min(count - 1, values.length - 1)];
+
+    return currentRows.filter((row) => {
+      const value = row[filter.key];
+      if (value == null) return false;
+      return filter.mode === "top" ? value >= threshold : value <= threshold;
+    });
+  }, rows);
+}
+
+function applySort(rows, sort) {
+  if (!sort) return rows;
+  return [...rows].sort((a, b) => {
+    const left = a[sort.key];
+    const right = b[sort.key];
+    if (left == null && right == null) return 0;
+    if (left == null) return 1;
+    if (right == null) return -1;
+    return sort.direction === "asc" ? left - right : right - left;
   });
 }
 
