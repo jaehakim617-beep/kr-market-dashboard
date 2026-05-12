@@ -12,9 +12,7 @@
         <h1>KR Market Visualizer</h1>
         <p id="snapshot-meta">데이터를 불러오는 중</p>
       </div>
-      <div class="actions">
-        <button id="theme-toggle" title="테마 전환" aria-label="테마 전환">◐</button>
-      </div>
+      <button id="theme-toggle" title="테마 전환" aria-label="테마 전환">◐</button>
     </header>
 
     <main>
@@ -33,11 +31,13 @@
         </label>
       </section>
 
-      <section class="summary-grid" id="summary-grid"></section>
-
       <section class="workspace">
         <div class="table-wrap">
           <table>
+            <colgroup>
+              <col class="col-name" />
+              <col span="10" />
+            </colgroup>
             <thead>
               <tr>
                 <th>종목</th>
@@ -45,15 +45,15 @@
                 <th><button class="sort-button" data-sort="changeRate" type="button">등락률 <span></span></button></th>
                 <th><button class="sort-button" data-sort="tradingValue" type="button">거래대금 <span></span></button></th>
                 <th><button class="sort-button" data-sort="sales" type="button">매출액 <span></span></button></th>
-                <th><button class="sort-button" data-sort="operatingProfit" type="button">영업이익 <span></span></button></th>
-                <th><button class="sort-button" data-sort="salesGrowth" type="button">매출액 증가율 <span></span></button></th>
-                <th><button class="sort-button" data-sort="operatingProfitGrowth" type="button">영업이익 증가율 <span></span></button></th>
+                <th><button class="sort-button" data-sort="operatingProfit" type="button">영업익 <span></span></button></th>
+                <th><button class="sort-button" data-sort="salesGrowth" type="button">매출증가 <span></span></button></th>
+                <th><button class="sort-button" data-sort="operatingProfitGrowth" type="button">영익증가 <span></span></button></th>
                 <th><button class="sort-button" data-sort="foreignRatio" type="button">외국인 <span></span></button></th>
                 <th><button class="sort-button" data-sort="per" type="button">PER <span></span></button></th>
                 <th><button class="sort-button" data-sort="marketCap" type="button">시총 <span></span></button></th>
               </tr>
               <tr class="filter-row">
-                <th><button id="clear-filters" type="button">필터 초기화</button></th>
+                <th><button id="clear-filters" type="button">초기화</button></th>
                 <th data-filter-cell="price"></th>
                 <th data-filter-cell="changeRate"></th>
                 <th data-filter-cell="tradingValue"></th>
@@ -70,22 +70,19 @@
           </table>
         </div>
 
-        <aside class="detail">
-          <div class="detail-head">
+        <aside class="chart-panel">
+          <div class="chart-toolbar">
             <div>
-              <p id="selected-market">선택 종목</p>
-              <h2 id="selected-title">-</h2>
+              <strong id="chart-title">주가 차트</strong>
+              <span id="chart-state">종목을 선택하세요</span>
             </div>
-            <span id="selected-code">------</span>
-          </div>
-          <div class="metric-pairs" id="metric-pairs"></div>
-          <div class="chart-card">
-            <div class="chart-title">
-              <strong>주가 차트</strong>
-              <span id="chart-state">캐시 확인 중</span>
+            <div class="period-controls" aria-label="차트 주기">
+              <button class="period-button active" data-period="day" type="button">일봉</button>
+              <button class="period-button" data-period="week" type="button">주봉</button>
+              <button class="period-button" data-period="month" type="button">월봉</button>
             </div>
-            <svg id="price-chart" viewBox="0 0 720 300" role="img" aria-label="주가 차트"></svg>
           </div>
+          <svg id="price-chart" viewBox="0 0 720 360" role="img" aria-label="봉 차트"></svg>
         </aside>
       </section>
     </main>
