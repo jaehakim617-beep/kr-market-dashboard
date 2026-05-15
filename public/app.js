@@ -1,14 +1,14 @@
 const NUMERIC_FILTERS = [
-  { key: "price", label: "현재가", unit: "원" },
-  { key: "changeRate", label: "등락률", unit: "%" },
-  { key: "tradingValue", label: "거래대금", unit: "백만원" },
-  { key: "sales", label: "매출액", unit: "억원" },
-  { key: "operatingProfit", label: "영업이익", unit: "억원" },
-  { key: "salesGrowth", label: "매출액 증가율", unit: "%" },
-  { key: "operatingProfitGrowth", label: "영업이익 증가율", unit: "%" },
-  { key: "foreignRatio", label: "외국인", unit: "%" },
-  { key: "per", label: "PER", unit: "배" },
-  { key: "marketCap", label: "시총", unit: "억원" },
+  { key: "price", label: "현재가" },
+  { key: "changeRate", label: "등락률" },
+  { key: "tradingValue", label: "거래대금" },
+  { key: "sales", label: "매출액" },
+  { key: "operatingProfit", label: "영업익" },
+  { key: "salesGrowth", label: "매출증가" },
+  { key: "operatingProfitGrowth", label: "영익증가" },
+  { key: "foreignRatio", label: "외국인" },
+  { key: "per", label: "PER" },
+  { key: "marketCap", label: "시총" },
 ];
 
 const state = {
@@ -17,19 +17,17 @@ const state = {
   selected: null,
   sort: null,
   chartCache: new Map(),
+  chartPeriod: "day",
+  chartWindow: 90,
 };
 
 const els = {
   meta: document.querySelector("#snapshot-meta"),
-  summary: document.querySelector("#summary-grid"),
   market: document.querySelector("#market-filter"),
   search: document.querySelector("#search-input"),
   table: document.querySelector("#stock-table"),
-  selectedMarket: document.querySelector("#selected-market"),
-  selectedTitle: document.querySelector("#selected-title"),
-  selectedCode: document.querySelector("#selected-code"),
-  metrics: document.querySelector("#metric-pairs"),
   chart: document.querySelector("#price-chart"),
+  chartTitle: document.querySelector("#chart-title"),
   chartState: document.querySelector("#chart-state"),
   theme: document.querySelector("#theme-toggle"),
   clearFilters: document.querySelector("#clear-filters"),
@@ -39,14 +37,14 @@ init();
 
 async function init() {
   renderColumnFilters();
+  bindStaticEvents();
 
   try {
     const response = await fetch("./data/market_latest.json", { cache: "no-store" });
     if (!response.ok) throw new Error("data/market_latest.json 파일이 없습니다.");
     const data = await response.json();
     state.rows = data.rows ?? [];
-    els.meta.textContent = `${formatDateTime(data.generatedAt)} 기준 · ${state.rows.length.toLocaleString()}개 종목`;
-    bindEvents();
+    els.meta.textContent = `${formatDateTime(data.generatedAt)} 기준`;
     applyFilters();
     selectStock(state.filtered[0]);
   } catch (error) {
@@ -55,29 +53,42 @@ async function init() {
   }
 }
 
-function bindEvents() {
+function bindStaticEvents() {
   els.market.addEventListener("change", applyFilters);
   els.search.addEventListener("input", applyFilters);
   els.theme.addEventListener("click", () => document.body.classList.toggle("dark"));
-  document.querySelectorAll(".filter-row input, .filter-row select").forEach((control) => control.addEventListener("input", applyFilters));
-  document.querySelectorAll(".filter-row select").forEach((control) => control.addEventListener("change", applyFilters));
-  document.querySelectorAll(".sort-button").forEach((button) => {
-    button.addEventListener("click", () => {
-      const key = button.dataset.sort;
-      if (state.sort?.key === key) {
-        state.sort.direction = state.sort.direction === "desc" ? "asc" : "desc";
-      } else {
-        state.sort = { key, direction: "desc" };
-      }
-      updateSortIndicators();
-      applyFilters();
-    });
-  });
   els.clearFilters.addEventListener("click", () => {
     document.querySelectorAll(".filter-row input").forEach((input) => { input.value = ""; });
     document.querySelectorAll(".filter-row select").forEach((select) => { select.value = ""; });
     applyFilters();
   });
+
+  document.querySelectorAll(".sort-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.sort;
+      state.sort = state.sort?.key === key
+        ? { key, direction: state.sort.direction === "desc" ? "asc" : "desc" }
+        : { key, direction: "desc" };
+      updateSortIndicators();
+      applyFilters();
+    });
+  });
+
+  document.querySelectorAll(".period-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.chartPeriod = button.dataset.period;
+      document.querySelectorAll(".period-button").forEach((item) => item.classList.toggle("active", item === button));
+      drawSelectedChart();
+    });
+  });
+
+  els.chart.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    const direction = event.deltaY > 0 ? 1 : -1;
+    const step = state.chartPeriod === "day" ? 12 : state.chartPeriod === "week" ? 8 : 4;
+    state.chartWindow = clamp(state.chartWindow + direction * step, 20, 260);
+    drawSelectedChart();
+  }, { passive: false });
 }
 
 function renderColumnFilters() {
@@ -101,6 +112,11 @@ function renderColumnFilters() {
       </div>
     `;
   });
+
+  document.querySelectorAll(".filter-row input, .filter-row select").forEach((control) => {
+    control.addEventListener("input", applyFilters);
+    control.addEventListener("change", applyFilters);
+  });
 }
 
 function applyFilters() {
@@ -117,7 +133,6 @@ function applyFilters() {
   state.filtered = applyPercentFilters(state.filtered, percentFilters);
   state.filtered = applySort(state.filtered, state.sort);
 
-  renderSummary();
   renderTable();
   if (!state.filtered.includes(state.selected)) selectStock(state.filtered[0]);
 }
@@ -163,8 +178,8 @@ function applyPercentFilters(rows, filters) {
 
     if (!values.length) return [];
 
-    const clampedPercent = Math.min(Math.max(filter.percent, 0), 100);
-    const count = Math.max(1, Math.ceil(values.length * (clampedPercent / 100)));
+    const percent = clamp(filter.percent, 0, 100);
+    const count = Math.max(1, Math.ceil(values.length * (percent / 100)));
     const threshold = filter.mode === "top" ? values[Math.max(values.length - count, 0)] : values[Math.min(count - 1, values.length - 1)];
 
     return currentRows.filter((row) => {
@@ -173,15 +188,6 @@ function applyPercentFilters(rows, filters) {
       return filter.mode === "top" ? value >= threshold : value <= threshold;
     });
   }, rows);
-}
-
-function updateSortIndicators() {
-  document.querySelectorAll(".sort-button").forEach((button) => {
-    const marker = button.querySelector("span");
-    const active = state.sort?.key === button.dataset.sort;
-    button.classList.toggle("active", active);
-    marker.textContent = active ? (state.sort.direction === "asc" ? "▲" : "▼") : "";
-  });
 }
 
 function applySort(rows, sort) {
@@ -196,45 +202,33 @@ function applySort(rows, sort) {
   });
 }
 
-function renderSummary() {
-  const rows = state.filtered;
-  const kospi = rows.filter((row) => row.market === "KOSPI").length;
-  const kosdaq = rows.filter((row) => row.market === "KOSDAQ").length;
-  const advancers = rows.filter((row) => row.changeRate > 0).length;
-  const decliners = rows.filter((row) => row.changeRate < 0).length;
-
-  const cards = [
-    ["표시 종목", `${rows.length.toLocaleString()}개`],
-    ["코스피 / 코스닥", `${kospi.toLocaleString()} / ${kosdaq.toLocaleString()}`],
-    ["상승 / 하락", `${advancers.toLocaleString()} / ${decliners.toLocaleString()}`],
-  ];
-
-  els.summary.innerHTML = cards
-    .map(([label, value]) => `<article class="summary-card"><span>${label}</span><strong>${value}</strong></article>`)
-    .join("");
+function updateSortIndicators() {
+  document.querySelectorAll(".sort-button").forEach((button) => {
+    const marker = button.querySelector("span");
+    const active = state.sort?.key === button.dataset.sort;
+    button.classList.toggle("active", active);
+    marker.textContent = active ? (state.sort.direction === "asc" ? "▲" : "▼") : "";
+  });
 }
 
 function renderTable() {
-  const html = state.filtered
-    .slice(0, 500)
-    .map((row) => {
-      const trend = trendClass(row.changeRate);
-      const selected = row === state.selected ? " selected" : "";
-      return `<tr class="${selected}" data-symbol="${row.symbol}">
-        <td><div class="stock-name"><strong>${escapeHtml(row.name)}</strong><span>${row.market} · ${row.symbol}</span></div></td>
-        <td>${formatPrice(row.price)}</td>
-        <td class="${trend}">${formatPercent(row.changeRate)}</td>
-        <td>${formatNumber(row.tradingValue)}</td>
-        <td>${formatNumber(row.sales)}</td>
-        <td>${formatNumber(row.operatingProfit)}</td>
-        <td>${formatPercent(row.salesGrowth)}</td>
-        <td>${formatPercent(row.operatingProfitGrowth)}</td>
-        <td>${formatPercent(row.foreignRatio)}</td>
-        <td>${formatRatio(row.per)}</td>
-        <td>${formatNumber(row.marketCap)}</td>
-      </tr>`;
-    })
-    .join("");
+  const html = state.filtered.slice(0, 500).map((row) => {
+    const trend = trendClass(row.changeRate);
+    const selected = row === state.selected ? " selected" : "";
+    return `<tr class="${selected}" data-symbol="${row.symbol}">
+      <td><div class="stock-name"><strong>${escapeHtml(row.name)}</strong><span>${row.symbol}</span></div></td>
+      <td>${formatPrice(row.price)}</td>
+      <td class="${trend}">${formatPercent(row.changeRate)}</td>
+      <td>${formatNumber(row.tradingValue)}</td>
+      <td>${formatNumber(row.sales)}</td>
+      <td>${formatNumber(row.operatingProfit)}</td>
+      <td>${formatPercent(row.salesGrowth)}</td>
+      <td>${formatPercent(row.operatingProfitGrowth)}</td>
+      <td>${formatPercent(row.foreignRatio)}</td>
+      <td>${formatRatio(row.per)}</td>
+      <td>${formatNumber(row.marketCap)}</td>
+    </tr>`;
+  }).join("");
 
   els.table.innerHTML = html || `<tr><td class="empty" colspan="11">조건에 맞는 종목이 없습니다.</td></tr>`;
   els.table.querySelectorAll("tr[data-symbol]").forEach((tr) => {
@@ -247,95 +241,145 @@ async function selectStock(row) {
   renderTable();
 
   if (!row) {
-    els.selectedTitle.textContent = "-";
-    els.selectedCode.textContent = "------";
-    els.metrics.innerHTML = "";
+    els.chartTitle.textContent = "주가 차트";
     drawEmptyChart("선택된 종목이 없습니다.");
     return;
   }
 
-  els.selectedMarket.textContent = row.marketName;
-  els.selectedTitle.textContent = row.name;
-  els.selectedCode.textContent = row.symbol;
-  els.metrics.innerHTML = [
-    ["현재가", formatPrice(row.price)],
-    ["전일비", formatSigned(row.change)],
-    ["등락률", formatPercent(row.changeRate)],
-    ["거래대금", `${formatNumber(row.tradingValue)} 백만원`],
-    ["매출액", `${formatNumber(row.sales)} 억원`],
-    ["영업이익", `${formatNumber(row.operatingProfit)} 억원`],
-    ["매출액 증가율", formatPercent(row.salesGrowth)],
-    ["영업이익 증가율", formatPercent(row.operatingProfitGrowth)],
-    ["외국인비율", formatPercent(row.foreignRatio)],
-    ["PER", formatRatio(row.per)],
-  ]
-    .map(([label, value]) => `<div class="metric"><span>${label}</span><strong>${value}</strong></div>`)
-    .join("");
-
-  await renderChart(row.symbol);
+  els.chartTitle.textContent = `${row.name} (${row.symbol})`;
+  await drawSelectedChart();
 }
 
-async function renderChart(symbol) {
+async function drawSelectedChart() {
+  const row = state.selected;
+  if (!row) return;
+
   els.chartState.textContent = "차트 로딩";
   try {
-    let chart = state.chartCache.get(symbol);
+    let chart = state.chartCache.get(row.symbol);
     if (!chart) {
-      const response = await fetch(`./data/charts/${symbol}.json`, { cache: "no-store" });
+      const response = await fetch(`./data/charts/${row.symbol}.json`, { cache: "no-store" });
       if (!response.ok) throw new Error("차트 캐시 없음");
       chart = await response.json();
-      state.chartCache.set(symbol, chart);
+      state.chartCache.set(row.symbol, chart);
     }
-    drawChart(chart.rows ?? []);
-    els.chartState.textContent = `${(chart.rows ?? []).length}거래일`;
+    const candles = aggregateCandles(chart.rows ?? [], state.chartPeriod).slice(-state.chartWindow);
+    drawCandles(candles);
+    els.chartState.textContent = `${periodLabel(state.chartPeriod)} · ${candles.length}봉 · 마우스 휠로 확대/축소`;
   } catch {
-    drawEmptyChart("node scripts/update-data.mjs --charts 실행 후 표시됩니다.");
+    drawEmptyChart("차트 데이터가 없습니다.");
     els.chartState.textContent = "차트 없음";
   }
 }
 
-function drawChart(rows) {
-  if (!rows.length) {
+function aggregateCandles(rows, period) {
+  if (period === "day") return rows.map(toCandle);
+
+  const groups = new Map();
+  rows.forEach((row) => {
+    const key = period === "week" ? weekKey(row.date) : row.date.slice(0, 6);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  });
+
+  return [...groups.values()].map((items) => {
+    const first = items[0];
+    const last = items[items.length - 1];
+    return {
+      date: last.date,
+      open: first.open,
+      high: Math.max(...items.map((item) => item.high)),
+      low: Math.min(...items.map((item) => item.low)),
+      close: last.close,
+    };
+  });
+}
+
+function toCandle(row) {
+  return {
+    date: row.date,
+    open: row.open,
+    high: row.high,
+    low: row.low,
+    close: row.close,
+  };
+}
+
+function drawCandles(candles) {
+  if (!candles.length) {
     drawEmptyChart("표시할 차트 데이터가 없습니다.");
     return;
   }
 
   const width = 720;
-  const height = 300;
-  const pad = 28;
-  const values = rows.map((row) => row.close).filter(Number.isFinite);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const height = 360;
+  const pad = { top: 22, right: 18, bottom: 26, left: 54 };
+  const innerWidth = width - pad.left - pad.right;
+  const innerHeight = height - pad.top - pad.bottom;
+  const max = Math.max(...candles.map((candle) => candle.high));
+  const min = Math.min(...candles.map((candle) => candle.low));
   const span = max - min || 1;
-  const points = rows.map((row, index) => {
-    const x = pad + (index / Math.max(rows.length - 1, 1)) * (width - pad * 2);
-    const y = height - pad - ((row.close - min) / span) * (height - pad * 2);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
+  const slot = innerWidth / candles.length;
+  const bodyWidth = clamp(slot * 0.58, 2, 12);
+  const y = (value) => pad.top + ((max - value) / span) * innerHeight;
 
-  els.chart.innerHTML = `
-    <line class="axis" x1="${pad}" y1="${height - pad}" x2="${width - pad}" y2="${height - pad}"></line>
-    <line class="axis" x1="${pad}" y1="${pad}" x2="${pad}" y2="${height - pad}"></line>
-    <polyline class="price-line" points="${points.join(" ")}"></polyline>
-    <text x="${pad}" y="20" fill="currentColor" font-size="13">${formatPrice(max)}</text>
-    <text x="${pad}" y="${height - 6}" fill="currentColor" font-size="13">${formatPrice(min)}</text>
-  `;
+  const grid = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+    const gy = pad.top + ratio * innerHeight;
+    const value = max - ratio * span;
+    return `<line class="chart-grid" x1="${pad.left}" y1="${gy}" x2="${width - pad.right}" y2="${gy}"></line>
+      <text class="axis-label" x="${pad.left - 7}" y="${gy + 4}" text-anchor="end">${formatCompact(value)}</text>`;
+  }).join("");
+
+  const shapes = candles.map((candle, index) => {
+    const x = pad.left + index * slot + slot / 2;
+    const openY = y(candle.open);
+    const closeY = y(candle.close);
+    const highY = y(candle.high);
+    const lowY = y(candle.low);
+    const top = Math.min(openY, closeY);
+    const bodyHeight = Math.max(Math.abs(openY - closeY), 1);
+    const klass = candle.close > candle.open ? "candle up-candle" : candle.close < candle.open ? "candle down-candle" : "candle flat-candle";
+    return `<g class="${klass}">
+      <line x1="${x}" y1="${highY}" x2="${x}" y2="${lowY}"></line>
+      <rect x="${x - bodyWidth / 2}" y="${top}" width="${bodyWidth}" height="${bodyHeight}"></rect>
+    </g>`;
+  }).join("");
+
+  els.chart.innerHTML = `${grid}${shapes}`;
 }
 
 function drawEmptyChart(message) {
-  els.chart.innerHTML = `<text x="360" y="150" text-anchor="middle" fill="currentColor" font-size="16">${escapeHtml(message)}</text>`;
+  els.chart.innerHTML = `<text x="360" y="180" text-anchor="middle" fill="currentColor" font-size="16">${escapeHtml(message)}</text>`;
 }
 
-function parseFilterNumber(value) {
-  const cleaned = value.replace(/,/g, "").trim();
-  if (!cleaned) return null;
-  const number = Number(cleaned);
-  return Number.isFinite(number) ? number : null;
+function weekKey(yyyymmdd) {
+  const date = new Date(`${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}T00:00:00`);
+  const day = date.getDay() || 7;
+  date.setDate(date.getDate() + 4 - day);
+  const yearStart = new Date(date.getFullYear(), 0, 1);
+  const week = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return `${date.getFullYear()}-${String(week).padStart(2, "0")}`;
 }
 
 function trendClass(value) {
   if (value > 0) return "up";
   if (value < 0) return "down";
-  return "";
+  return "flat";
+}
+
+function parseFilterNumber(value) {
+  const cleaned = String(value).replace(/,/g, "").trim();
+  if (!cleaned) return null;
+  const number = Number(cleaned);
+  return Number.isFinite(number) ? number : null;
+}
+
+function periodLabel(period) {
+  return period === "day" ? "일봉" : period === "week" ? "주봉" : "월봉";
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function formatDateTime(value) {
@@ -351,18 +395,16 @@ function formatNumber(value) {
   return value == null ? "-" : Number(value).toLocaleString();
 }
 
+function formatCompact(value) {
+  return Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
 function formatPercent(value) {
   return value == null ? "-" : `${Number(value).toFixed(2)}%`;
 }
 
 function formatRatio(value) {
   return value == null ? "-" : Number(value).toFixed(2);
-}
-
-function formatSigned(value) {
-  if (value == null) return "-";
-  const prefix = value > 0 ? "+" : "";
-  return `${prefix}${Number(value).toLocaleString()}원`;
 }
 
 function escapeHtml(value) {
